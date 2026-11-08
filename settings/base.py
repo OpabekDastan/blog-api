@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+from django.urls import reverse_lazy
+
 from settings.conf import SECRET_KEY  # noqa: F401
 
 # ---------- Paths ----------
@@ -25,13 +27,22 @@ DJANGO_APPS: list[str] = [
 
 THIRD_PARTY_APPS: list[str] = []
 
+# Unfold must be loaded BEFORE django.contrib.admin
+UNFOLD_APPS: list[str] = [
+    "unfold",
+    "unfold.contrib.filters",
+    "unfold.contrib.forms",
+]
+
 PROJECT_APPS: list[str] = [
     "apps.abstracts",
     "apps.auths",
     "apps.blog",
 ]
 
-INSTALLED_APPS: list[str] = DJANGO_APPS + THIRD_PARTY_APPS + PROJECT_APPS
+INSTALLED_APPS: list[str] = (
+    UNFOLD_APPS + DJANGO_APPS + THIRD_PARTY_APPS + PROJECT_APPS
+)
 
 # ---------- Middleware ----------
 MIDDLEWARE: list[str] = [
@@ -53,7 +64,7 @@ ASGI_APPLICATION: str = "settings.asgi.application"
 TEMPLATES: list[dict] = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -114,4 +125,131 @@ LOGGING: dict = {
         "handlers": ["console", "file"],
         "level": "INFO",
     },
+}
+
+# ---------- Unfold admin ----------
+UNFOLD: dict = {
+    "SITE_TITLE": "Blog API",
+    "SITE_HEADER": "Blog API",
+    "SITE_SUBHEADER": "Admin panel",
+    "SITE_SYMBOL": "article",
+    "ENVIRONMENT": "apps.blog.callbacks.environment_callback",
+    "DASHBOARD_CALLBACK": "apps.blog.callbacks.dashboard_callback",
+    "COLORS": {
+        "primary": {
+            "50": "oklch(96.2% 0.018 272.314)",
+            "100": "oklch(93% 0.034 272.788)",
+            "200": "oklch(87% 0.065 274.039)",
+            "300": "oklch(78.5% 0.115 274.713)",
+            "400": "oklch(67.3% 0.182 276.935)",
+            "500": "oklch(58.5% 0.233 277.117)",
+            "600": "oklch(51.1% 0.262 276.966)",
+            "700": "oklch(45.7% 0.24 277.023)",
+            "800": "oklch(39.8% 0.195 277.366)",
+            "900": "oklch(35.9% 0.144 278.697)",
+            "950": "oklch(25.7% 0.09 281.288)",
+        },
+    },
+    "SITE_DROPDOWN": [
+        {
+            "icon": "code",
+            "title": "GitHub repository",
+            "link": "https://github.com/OpabekDastan/blog-api",
+        },
+        {
+            "icon": "menu_book",
+            "title": "Unfold docs",
+            "link": "https://unfoldadmin.com/docs/",
+        },
+    ],
+    "COMMAND": {
+        "search_models": True,
+    },
+    "SIDEBAR": {
+        "show_search": True,
+        "show_all_applications": False,
+        "navigation": [
+            {
+                "title": "Overview",
+                "items": [
+                    {
+                        "title": "Dashboard",
+                        "icon": "dashboard",
+                        "link": reverse_lazy("admin:index"),
+                    },
+                ],
+            },
+            {
+                "title": "Content",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Posts",
+                        "icon": "article",
+                        "link": reverse_lazy("admin:blog_post_changelist"),
+                        "badge": "apps.blog.callbacks.drafts_badge",
+                    },
+                    {
+                        "title": "Comments",
+                        "icon": "chat",
+                        "link": reverse_lazy("admin:blog_comment_changelist"),
+                    },
+                    {
+                        "title": "Categories",
+                        "icon": "folder",
+                        "link": reverse_lazy("admin:blog_category_changelist"),
+                    },
+                    {
+                        "title": "Tags",
+                        "icon": "sell",
+                        "link": reverse_lazy("admin:blog_tag_changelist"),
+                    },
+                ],
+            },
+            {
+                "title": "Users & Access",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Users",
+                        "icon": "person",
+                        "link": reverse_lazy("admin:auths_user_changelist"),
+                        "permission": "apps.blog.callbacks.is_superuser",
+                    },
+                    {
+                        "title": "Groups",
+                        "icon": "group",
+                        "link": reverse_lazy("admin:auth_group_changelist"),
+                        "permission": "apps.blog.callbacks.is_superuser",
+                    },
+                ],
+            },
+        ],
+    },
+    "TABS": [
+        {
+            "models": ["blog.post"],
+            "items": [
+                {
+                    "title": "All",
+                    "link": reverse_lazy("admin:blog_post_changelist"),
+                    "active": "apps.blog.callbacks.all_posts_tab_active",
+                },
+                {
+                    "title": "Published",
+                    "link": lambda request: (
+                        f"{reverse_lazy('admin:blog_post_changelist')}"
+                        "?status__exact=published"
+                    ),
+                },
+                {
+                    "title": "Drafts",
+                    "link": lambda request: (
+                        f"{reverse_lazy('admin:blog_post_changelist')}"
+                        "?status__exact=draft"
+                    ),
+                },
+            ],
+        },
+    ],
 }
