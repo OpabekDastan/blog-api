@@ -232,12 +232,17 @@ class Command(BaseCommand):
         oldest: datetime = self.now - timedelta(days=self.DATES_SPAN_DAYS)
         for post in posts:
             post.created_at = self._random_date_between(oldest, self.now)
-            if random.random() < self.EDITED_POSTS_SHARE:
-                delay: timedelta = timedelta(
-                    days=random.randint(self.MIN_EDIT_DELAY_DAYS, self.MAX_EDIT_DELAY_DAYS))
-
-                post.updated_at = min(post.created_at + delay, self.now)
+            post.updated_at = self._random_updated_at(post.created_at)
         Post.objects.bulk_update(posts, ["created_at", "updated_at"])
+
+    def _random_updated_at(self, created_at: datetime) -> datetime:
+        if random.random() >= self.EDITED_POSTS_SHARE:
+            return created_at
+        delay: timedelta = timedelta(
+            days=random.randint(self.MIN_EDIT_DELAY_DAYS, self.MAX_EDIT_DELAY_DAYS)
+        )
+        return min(created_at + delay, self.now)
+        
 
     def _random_date_between(self, start: datetime, end: datetime) -> datetime:
         seconds: int = random.randint(0, int((end-start).total_seconds()))
