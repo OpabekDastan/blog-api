@@ -1,10 +1,11 @@
 #python modules
 from datetime import timedelta, datetime, date
+from django.db.models.functions import Coalesce, Concat, TruncMonth
 from django.utils import timezone
 from django.utils import timezone
 from typing import Any, Callable
 #django mod
-from django.db.models import F, Q, QuerySet
+from django.db.models import F, Q, Avg, Case, CharField, Count, DateField, Max, Min, QuerySet, Value, When
 #project mod
 from apps.auths.models import User
 from apps.blog.models import Category, Comment, Post, Tag
@@ -17,6 +18,14 @@ NEWEST_POSTS_LIMIT = 5
 FIRST_PAGE = 1
 PAGE_SIZE = 10 
 EDITED_AFTER = timedelta(hours=1)
+UNCATEGORIZED = "Uncategorized"
+AVERAGE_DIGITS = 2
+TOP_AUTHORS_LIMIT = 5
+HOT_MIN_COMMENTS = 10
+NORMAL_MIN_COMMENTS = 3 
+HOT = "hot"
+NORMAL = "normal"
+QUIET = "quiet"
 
 def categories_by_name() -> QuerySet[Category]:
     """All categories, sorted by name A → Z. """
@@ -158,25 +167,44 @@ def comments_before_post() -> QuerySet[Comment]:
 
 def published_authors_emails() -> list[str]:
     """Emails of authors who have published posts. Unique, sorted A -> Z."""
-    return []
+    emails: QuerySet = (
+        Post.objects.filter(status = Post.Status.PUBLISHED)
+        .order_by("author__email")
+        .values_list("author__email", flat= True)
+        .distinct()
+    )
+    return list(emails)
 
 
 def published_posts_overview() -> list[dict[str, Any]]:
     """One dict for each published post with title, author_email, category_name."""
-    return []
-
+    posts: QuerySet = published_posts().values(
+        "title",
+        author_email = F("author__email"),
+        category_name = Coalesce("category__name", Value(UNCATEGORIZED)),
+    )
+    return list(posts)
 
 # --- Level 6 — aggregate ---
 
 
 def posts_stats() -> dict[str, Any]:
     """Total, published, drafts counts, and first/last post dates in one query."""
-    return {}
+    return Post.objects.aggregate(
+        total = Count("id"),
+        published = Count("id", filter=Q(status=Post.Status.PUBLISHED)),
+        drafts = Count("id", filter=Q(status=Post.Status.DRAFT)),
+        first_post_at = Min("created_at"),
+        last_post_at = Max("created_at")
+    )
 
 
 def average_comments_per_post() -> float:
     """Average number of comments on a published post, rounded to 2 digits."""
-    return 0.0
+    posts: QuerySet[Post] = Post.objects.filter(status=Post.Status.PUBLISHED)
+    posts = posts.annotate(comment_count = Count("comments"))
+    result: dict[str, Any] = posts.aggregate(average=Avg("comment_count",default=0.0))
+    return round(result["average"], AVERAGE_DIGITS)
 
 
 # --- Level 7 — annotate ---
@@ -184,32 +212,45 @@ def average_comments_per_post() -> float:
 
 def categories_with_post_count() -> QuerySet[Category]:
     """Every category with post_count. Most posts first, then by name."""
-    return []
+    categories: QuerySet[Category] = Category.objects.annotate(post_count = Count("posts"))
+    return categories.order_by("-post_count", "name")
 
 
 def categories_with_published_count() -> QuerySet[Category]:
     """Every category with published_count (including 0)."""
-    return []
+    only_published: Q = Q(posts__status = Post.Status.PUBLISHED)
+    return Category.objects.annotate(
+        published_count = Count("posts", filter=only_published)
+    )
 
 
 def top_authors() -> QuerySet[User]:
     """Top 5 users by number of published posts, with published_count."""
-    return []
+    only_published: Q = Q(posts__status = Post.Status.PUBLISHED)
+    users: QuerySet[User] = User.objects.annotate(
+        published_count = Count("posts", filter=only_published)
+    )
+    return users.order_by("-published_count", "email")[:TOP_AUTHORS_LIMIT]
 
 
 def popular_tags(min_posts: int) -> QuerySet[Tag]:
     """Tags used in at least min_posts posts, with post_count."""
-    return []
+    tags: QuerySet[Tag] = Tag.objects.annotate(post_count = Count("posts"))
+    return tags.order_by("-post_count", "name")
 
 
 def posts_per_status() -> list[dict[str, Any]]:
     """Number of posts for each status."""
-    return []
+    statuses: QuerySet = Post.objects.values("status").annotate(count= Count("id"))
+    return list(statuses.order_by("status"))
 
 
 def users_activity() -> QuerySet[User]:
     """Every user with accurate post_count and comment_count."""
-    return []
+    return User.objects.annotate(
+        post_count = Count("posts", distinct=True),
+        comment_count = Count("comments", distinct=True),
+    )
 
 
 # --- Level 8 — Database Functions and Conditions ---
@@ -217,17 +258,31 @@ def users_activity() -> QuerySet[User]:
 
 def search_users_by_full_name(text: str) -> QuerySet[User]:
     """Users whose full name ("First Last") contains text (case-insensitive)."""
-    return []
+    users: QuerySet[User] = User.objects.annotate(
+        full_name = Concat("first_name", Value(" "), "last_name")
+    )
+    return users.filter(full_name__icontains = text)
 
 
 def published_posts_per_month() -> list[dict[str, Any]]:
     """Number of published posts in each month, oldest month first."""
-    return []
-
+    posts: QuerySet[Post] = Post.objects.filter(status = Post.Status.PUBLISHED)
+    posts = posts.annotate(month = TruncMonth("created_at", output_field=DateField()))
+    months: QuerySet = posts.values("month").annotate(count = Count("id"))
+    return list(months.order_by("month"))
 
 def posts_with_popularity() -> QuerySet[Post]:
     """Every post with comment_count and popularity (hot, normal, quiet)."""
-    return []
+    return Post.objects.annotate(
+        comment_count = Count("comments"),
+    popularity = Case(
+        When(comment_count__gte = HOT_MIN_COMMENTS, then = Value(HOT)),
+        When(comment_count__gte=NORMAL_MIN_COMMENTS, then=Value(NORMAL)),
+        default=Value(QUIET),
+        output_field=CharField(),
+    ),
+
+    )
 
 
 # --- Level 9 — Changing Data ---
@@ -319,4 +374,17 @@ QUERIES: dict[int, Callable[..., Any]] = {
     24: edited_posts,
     25: comments_by_post_author,
     26: comments_before_post,
+    27: published_authors_emails,
+    28: published_posts_overview,
+    29: posts_stats,
+    30: average_comments_per_post,
+    31: categories_with_post_count,
+    32: categories_with_published_count,
+    33: top_authors,
+    34: popular_tags,
+    35: posts_per_status,
+    36: users_activity,
+    37: search_users_by_full_name,
+    38: published_posts_per_month,
+    39: posts_with_popularity,
 }

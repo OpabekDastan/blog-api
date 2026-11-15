@@ -25,6 +25,8 @@ class Command(BaseCommand):
     SAMPLE_PAGE = 2 
     SAMPLE_DAYS = 30 
     SAMPLE_TAGS_COUNT = 2
+    SAMPLE_MIN_POSTS = 10
+    LAST_NAME_LETTERS = 3
 
     def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
@@ -70,11 +72,14 @@ class Command(BaseCommand):
             post_slug = post_slug
             title_word = post.title.split()[0]
         author_email: str = ""
+        full_name: str = ""
         author: User | None = User.objects.filter(
             posts__status = Post.Status.PUBLISHED
         ).first()
         if author:
             author_email = author_email
+            last_name_start: str = author.last_name[: self.LAST_NAME_LETTERS]
+            full_name_part = f"{author.first_name} {last_name_start}".lower()
         first_tag: str = ""
         second_tag: str = ""
         post_with_tags: Post | None = (
@@ -100,7 +105,8 @@ class Command(BaseCommand):
             16: {"tag_slug": "orm"},
             17: {"category_slug": "django"},
             21: {"first_slug": first_tag, "second_slug": second_tag},
-            22: {"text": title_word}
+            22: {"text": title_word},
+            34: {"min_posts": self.SAMPLE_MIN_POSTS},
 
         }
         
