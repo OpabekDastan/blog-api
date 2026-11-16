@@ -107,6 +107,11 @@ class Command(BaseCommand):
             21: {"first_slug": first_tag, "second_slug": second_tag},
             22: {"text": title_word},
             34: {"min_posts": self.SAMPLE_MIN_POSTS},
+            37: {"text": full_name_part},
+            40: {"name": "Django ORM"},
+            41: {"days": self.SAMPLE_DAYS},
+            42: {"category_slug": "django", "tag_slug": "orm"},
+            43: {"source_slug": "career", "target_slug": "python"},
 
         }
         
