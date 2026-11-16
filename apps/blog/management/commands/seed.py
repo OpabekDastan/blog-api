@@ -7,7 +7,8 @@ from django.core.management.base import BaseCommand, CommandError, CommandParser
 from django.db import transaction
 from django.utils.text import slugify
 from faker import Faker
-
+from datetime import datetime, timedelta
+from django.utils import timezone
 from apps.auths.models import User
 from apps.blog.models import Category, Comment, Post, Tag
 
@@ -35,6 +36,11 @@ class Command(BaseCommand):
     MIN_COMMENT_SENTENCES = 1
     MAX_COMMENT_SENTENCES = 3
     FIRST_DUPLICATE_SUFFIX = 2
+
+    DATES_SPAN_DAYS = 365
+    EDITED_POSTS_SHARE = 0.3
+    MIN_EDIT_DELAY_DAYS = 1
+    MAX_EDIT_DELAY_DAYS = 30
 
     SUMMARY_LABEL_WIDTH = 11
     SUMMARY_COUNT_WIDTH = 4
@@ -88,6 +94,7 @@ class Command(BaseCommand):
 
         self._validate_counts(users_count, posts_count, comments_count)
         self.fake: Faker = Faker()
+        self.now: datetime = timezone.now()
         started_at: float = time.perf_counter()
 
         with transaction.atomic():
@@ -98,9 +105,11 @@ class Command(BaseCommand):
                 "Users": self._create_users(users_count),
                 "Categories": self._create_categories(),
                 "Tags": self._create_tags(),
-                "Posts": self._create_posts(posts_count),
-                "Comments": self._create_comments(comments_count),
             }
+            posts: list[Post] = self._create_posts(posts_count)
+            created["Posts"] = len(posts)
+            created["Comments"] =  self._create_comments(comments_count, posts)
+            
 
         self._print_summary(created)
         elapsed: float = time.perf_counter() - started_at
@@ -179,9 +188,9 @@ class Command(BaseCommand):
         Tag.objects.bulk_create(tags)
         return len(tags)
 
-    def _create_posts(self, count: int) -> int:
+    def _create_posts(self, count: int) -> list[Post]:
         if count == 0:
-            return 0
+            return[]
 
         authors: list[User] = list(User.objects.all())
         if not authors:
@@ -190,6 +199,7 @@ class Command(BaseCommand):
         categories: list[Category] = list(Category.objects.all())
         tags: list[Tag] = list(Tag.objects.all())
         used_slugs: set[str] = set(Post.objects.values_list("slug", flat=True))
+        
 
         posts: list[Post] = []
         for _ in range(count):
@@ -205,6 +215,7 @@ class Command(BaseCommand):
                     ),
                     category=self._random_category(categories),
                     status=self._random_status(),
+                    
                 )
             )
         created: list[Post] = Post.objects.bulk_create(posts)
@@ -214,7 +225,28 @@ class Command(BaseCommand):
                 self.MIN_TAGS_PER_POST, min(self.MAX_TAGS_PER_POST, len(tags))
             )
             post.tags.set(random.sample(tags, k=tags_count))
-        return len(created)
+        self._set_post_dates(created)
+        return created
+
+    def _set_post_dates(self, posts: list[Post]) -> None:
+        oldest: datetime = self.now - timedelta(days=self.DATES_SPAN_DAYS)
+        for post in posts:
+            post.created_at = self._random_date_between(oldest, self.now)
+            post.updated_at = self._random_updated_at(post.created_at)
+        Post.objects.bulk_update(posts, ["created_at", "updated_at"])
+
+    def _random_updated_at(self, created_at: datetime) -> datetime:
+        if random.random() >= self.EDITED_POSTS_SHARE:
+            return created_at
+        delay: timedelta = timedelta(
+            days=random.randint(self.MIN_EDIT_DELAY_DAYS, self.MAX_EDIT_DELAY_DAYS)
+        )
+        return min(created_at + delay, self.now)
+        
+
+    def _random_date_between(self, start: datetime, end: datetime) -> datetime:
+        seconds: int = random.randint(0, int((end-start).total_seconds()))
+        return start + timedelta(seconds=seconds)
 
     def _unique_slug(self, title: str, used: set[str]) -> str:
         base: str = slugify(title)
@@ -236,7 +268,7 @@ class Command(BaseCommand):
             return Post.Status.PUBLISHED
         return Post.Status.DRAFT
 
-    def _create_comments(self, count: int) -> int:
+    def _create_comments(self, count: int, posts: list[Post]) -> int:
         if count == 0:
             return 0
 
@@ -245,7 +277,9 @@ class Command(BaseCommand):
             raise CommandError(
                 "Cannot create comments: there are no users. Use --users."
             )
-        published: list[Post] = list(Post.objects.filter(status=Post.Status.PUBLISHED))
+        published: list[Post] = [
+            post for post in posts if post.status == Post.Status.PUBLISHED
+        ]
         if not published:
             raise CommandError(
                 "Cannot create comments: there are no published posts. Use --posts."
@@ -264,5 +298,13 @@ class Command(BaseCommand):
             )
             for _ in range(count)
         ]
-        Comment.objects.bulk_create(comments)
-        return len(comments)
+        created: list[Comment] = Comment.objects.bulk_create(comments)
+
+        for comment in created: 
+            comment.created_at = self._random_date_between(
+                comment.post.created_at, self.now
+            )
+            comment.updated_at = comment.created_at
+        Comment.objects.bulk_update(created, ["created_at", "updated_at"])
+        return len(created)
+    
