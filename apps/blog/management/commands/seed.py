@@ -108,8 +108,7 @@ class Command(BaseCommand):
             }
             posts: list[Post] = self._create_posts(posts_count)
             created["Posts"] = len(posts)
-            created["Comments"] =  self._create_comments(comments_count, posts)
-            
+            created["Comments"] = self._create_comments(comments_count, posts)
 
         self._print_summary(created)
         elapsed: float = time.perf_counter() - started_at
@@ -190,7 +189,7 @@ class Command(BaseCommand):
 
     def _create_posts(self, count: int) -> list[Post]:
         if count == 0:
-            return[]
+            return []
 
         authors: list[User] = list(User.objects.all())
         if not authors:
@@ -199,7 +198,6 @@ class Command(BaseCommand):
         categories: list[Category] = list(Category.objects.all())
         tags: list[Tag] = list(Tag.objects.all())
         used_slugs: set[str] = set(Post.objects.values_list("slug", flat=True))
-        
 
         posts: list[Post] = []
         for _ in range(count):
@@ -215,7 +213,7 @@ class Command(BaseCommand):
                     ),
                     category=self._random_category(categories),
                     status=self._random_status(),
-                    
+
                 )
             )
         created: list[Post] = Post.objects.bulk_create(posts)
@@ -242,7 +240,6 @@ class Command(BaseCommand):
             days=random.randint(self.MIN_EDIT_DELAY_DAYS, self.MAX_EDIT_DELAY_DAYS)
         )
         return min(created_at + delay, self.now)
-        
 
     def _random_date_between(self, start: datetime, end: datetime) -> datetime:
         seconds: int = random.randint(0, int((end-start).total_seconds()))
@@ -300,11 +297,10 @@ class Command(BaseCommand):
         ]
         created: list[Comment] = Comment.objects.bulk_create(comments)
 
-        for comment in created: 
+        for comment in created:
             comment.created_at = self._random_date_between(
                 comment.post.created_at, self.now
             )
             comment.updated_at = comment.created_at
         Comment.objects.bulk_update(created, ["created_at", "updated_at"])
         return len(created)
-    
