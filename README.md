@@ -43,7 +43,36 @@ Posts:      300 created
 Comments:  1500 created
 Done in 0.34 seconds
 ```
+## Queries
 
+`apps/blog/queries.py` has 50 ORM queries, one function each. The `queries` command runs them and shows the result and the number of SQL queries.
+
+| Command                                     | What it does                                          |
+|---------------------------------------------|-------------------------------------------------------|
+| `python manage.py queries`                  | Runs all queries except 40–44 (they change the data)  |
+| `python manage.py queries --number 31`      | Runs only query 31 (works for 40–44 too)              |
+| `python manage.py queries --number 6 --sql` | Also prints the SQL that Django sent to the database  |
+
+Example:
+
+```
+$ python manage.py queries --number 31
+#31 categories_with_post_count — 1 SQL query
+Career {'post_count': 16}
+Python {'post_count': 15}
+DevOps {'post_count': 14}
+Django {'post_count': 14}
+Testing {'post_count': 14}
+(8 rows)
+
+$ python manage.py queries --number 6 --sql
+#6 has_drafts — 1 SQL query
+SELECT 1 AS "a" FROM "blog_post" WHERE "blog_post"."status" = 'draft' LIMIT 1
+True
+
+```
+
+Queries 40–44 change the data. Run `python manage.py seed --clear` to get fresh data.
 ## Admin
 
 The admin uses [Django Unfold](https://unfoldadmin.com/).
